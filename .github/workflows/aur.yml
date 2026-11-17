@@ -6,12 +6,15 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['*/PKGBUILD']
+    paths: ['*/PKGBUILD', '.github/workflows/aur.yml']
+  pull_request: # build and test only, never publish
+    paths: ['*/PKGBUILD', '.github/workflows/aur.yml']
 
 permissions:
   contents: read
 
-concurrency: aur
+concurrency:
+  group: aur-${{ github.event.pull_request.number || 'publish' }}
 
 defaults:
   run:
@@ -38,7 +41,7 @@ jobs:
       - name: Install tools
         working-directory: /
         run: |
-          pacman -Syu --noconfirm --needed git pacman-contrib jq
+          pacman -Syu --noconfirm --needed git pacman-contrib jq namcap
           useradd -m builder
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,6 +64,7 @@ jobs:
           echo "current=$current latest=$latest"
           if (( $(vercmp "$latest" "$current") > 0 )); then
             sed -i "s/^pkgver=.*/pkgver=$latest/; s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
           elif [[ $GITHUB_EVENT_NAME == schedule ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
@@ -68,13 +72,27 @@ jobs:
       - name: Build and test
         if: steps.check.outputs.skip != 'true'
         working-directory: ${{ matrix.pkg }}
+        env:
+          BUMPED: ${{ steps.check.outputs.bumped }}
         run: |
           # shellcheck disable=SC2046 # word splitting intended
           pacman -S --noconfirm --needed $(source PKGBUILD && echo "${depends[@]}" "${makedepends[@]}")
           chown -R builder .
-          su builder -c 'updpkgsums && makepkg -f --noconfirm && makepkg --printsrcinfo > .SRCINFO'
+          # Refresh checksums only for a new upstream version. Otherwise makepkg verifies
+          # downloads against the committed sums, so a replaced upstream asset fails here.
+          if [[ $BUMPED == true ]]; then su builder -c updpkgsums; fi
+          su builder -c 'makepkg -f --noconfirm && makepkg --printsrcinfo > .SRCINFO'
           pacman -U --noconfirm "$AUR_PKG"-*.pkg.tar.zst
-          ${{ matrix.check }}
+          su builder -c '${{ matrix.check }}'
+
+      - name: Lint
+        if: steps.check.outputs.skip != 'true'
+        working-directory: ${{ matrix.pkg }}
+        run: |
+          # ponytail: namcap findings are annotations, not failures; make E: lines fatal once runs are clean
+          namcap PKGBUILD "$AUR_PKG"-*.pkg.tar.zst | sed 's/^/::warning title=namcap::/'
+          git -c safe.directory="$GITHUB_WORKSPACE" diff --quiet .SRCINFO ||
+            echo "::warning title=.SRCINFO::committed .SRCINFO differs from makepkg --printsrcinfo (regenerated)"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.check.outputs.skip != 'true'
@@ -90,7 +108,8 @@ jobs:
   # Holds the AUR key. Never sources PKGBUILD or runs anything from the build.
   publish:
     needs: build
-    if: ${{ !cancelled() }} # publish packages that built even if another failed
+    # Publish packages that built even if another failed; never from a pull request.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
