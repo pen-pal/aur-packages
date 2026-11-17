@@ -37,6 +37,7 @@ jobs:
           - { pkg: ctfkit, upstream: compliancetf/ctfkit, check: ctfkit --version }
           - { pkg: artex-bin, upstream: BaaRai/ARTEX, check: artex -h }
           - { pkg: gpu-mcp-server, upstream: pmady/gpu-mcp-server, check: gpu-mcp-server --version }
+          - { pkg: zero-breach-toolkit-bin, upstream: interplains/Zero-Breach-Toolkit, check: zero-breach-toolkit --version }
     env:
       AUR_PKG: ${{ matrix.pkg }}
       UPSTREAM: ${{ matrix.upstream }}
@@ -85,6 +86,8 @@ jobs:
           # Refresh checksums only for a new upstream version. Otherwise makepkg verifies
           # downloads against the committed sums, so a replaced upstream asset fails here.
           if [[ $BUMPED == true ]]; then su builder -c updpkgsums; fi
+          # Upstream signing keys for validpgpkeys (AUR convention: keys/pgp/<fingerprint>.asc).
+          if [[ -d keys/pgp ]]; then su builder -c 'gpg --batch --import keys/pgp/*.asc'; fi
           su builder -c 'makepkg -f --noconfirm && makepkg --printsrcinfo > .SRCINFO'
           pacman -U --noconfirm "$AUR_PKG"-*.pkg.tar.zst
           su builder -c '${{ matrix.check }}'
@@ -155,7 +158,7 @@ jobs:
             aur=$RUNNER_TEMP/aur-$pkg
             GIT_SSH_COMMAND=$aur_ssh git clone -q "ssh://aur@aur.archlinux.org/$pkg.git" "$aur"
             # Tracked package files (service units, scripts...), then the built PKGBUILD/.SRCINFO.
-            git ls-files -z -- "$pkg" | xargs -0 cp -t "$aur/"
+            (cd "$pkg" && git ls-files -z | xargs -0 cp --parents -t "$aur/")
             cp "$dir/PKGBUILD" "$dir/.SRCINFO" "$aur/"
             git -C "$aur" add -A
             if git -C "$aur" diff --cached --quiet; then
