@@ -36,6 +36,7 @@ jobs:
           - { pkg: caveman-bin, upstream: JuliusBrussee/caveman, check: caveman --version }
           - { pkg: ctfkit, upstream: compliancetf/ctfkit, check: ctfkit --version }
           - { pkg: artex-bin, upstream: BaaRai/ARTEX, check: artex -h }
+          - { pkg: gpu-mcp-server, upstream: pmady/gpu-mcp-server, check: gpu-mcp-server --version }
     env:
       AUR_PKG: ${{ matrix.pkg }}
       UPSTREAM: ${{ matrix.upstream }}
