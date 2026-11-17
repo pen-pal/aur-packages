@@ -1,0 +1,110 @@
+name: AUR
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['*/PKGBUILD']
+
+permissions:
+  contents: write
+
+concurrency: aur
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Pinned AUR host key (matches fingerprint published on aur.archlinux.org)
+  AUR_HOST_KEY: aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN
+
+jobs:
+  update:
+    name: ${{ matrix.pkg }}
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      max-parallel: 1 # jobs commit to the same branch one after another
+      matrix:
+        include:
+          # pkg = folder name = AUR package name; upstream = GitHub repo with releases; check = smoke test
+          - { pkg: shellfirm-bin, upstream: kaplanelad/shellfirm, check: shellfirm --version }
+          - { pkg: caveman-bin, upstream: JuliusBrussee/caveman, check: caveman --version }
+    env:
+      AUR_PKG: ${{ matrix.pkg }}
+      UPSTREAM: ${{ matrix.upstream }}
+    steps:
+      - name: Install tools
+        working-directory: /
+        run: |
+          pacman -Syu --noconfirm --needed git openssh pacman-contrib jq
+          useradd -m builder
+
+      - uses: actions/checkout@v5
+
+      - name: Check upstream release
+        id: check
+        working-directory: ${{ matrix.pkg }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # Newest stable vX.Y.Z release; skips side tags (caveman also ships bin-v*, middleware-*-v*).
+          latest=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$UPSTREAM/releases?per_page=30" |
+            jq -r '[.[] | select(.draft or .prerelease | not) | .tag_name | select(test("^v[0-9]"))] | first')
+          latest=${latest#v}
+          [[ $latest =~ ^[0-9][0-9A-Za-z.]*$ ]] || { echo "bad upstream tag: $latest"; exit 1; }
+          current=$(source PKGBUILD && echo "$pkgver")
+          echo "current=$current latest=$latest"
+          if (( $(vercmp "$latest" "$current") > 0 )); then
+            sed -i "s/^pkgver=.*/pkgver=$latest/; s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          elif [[ $GITHUB_EVENT_NAME == schedule ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and test
+        if: steps.check.outputs.skip != 'true'
+        working-directory: ${{ matrix.pkg }}
+        run: |
+          # shellcheck disable=SC2046 # word splitting intended
+          pacman -S --noconfirm --needed $(source PKGBUILD && echo "${depends[@]}")
+          chown -R builder .
+          su builder -c 'updpkgsums && makepkg -f --noconfirm && makepkg --printsrcinfo > .SRCINFO'
+          pacman -U --noconfirm "$AUR_PKG"-*.pkg.tar.zst
+          ${{ matrix.check }}
+
+      - name: Commit to GitHub
+        if: steps.check.outputs.skip != 'true'
+        working-directory: ${{ matrix.pkg }}
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add PKGBUILD .SRCINFO
+          git diff --cached --quiet && exit 0
+          git commit -m "$AUR_PKG: update to $(source PKGBUILD && echo "$pkgver-$pkgrel")"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+      - name: Publish to AUR
+        if: steps.check.outputs.skip != 'true'
+        working-directory: ${{ matrix.pkg }}
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          install -dm700 /tmp/ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /tmp/ssh/key && chmod 600 /tmp/ssh/key
+          echo "$AUR_HOST_KEY" > /tmp/ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i /tmp/ssh/key -o IdentitiesOnly=yes -o UserKnownHostsFile=/tmp/ssh/known_hosts"
+          rm -rf /tmp/aur
+          git clone "ssh://aur@aur.archlinux.org/$AUR_PKG.git" /tmp/aur
+          cp PKGBUILD .SRCINFO /tmp/aur/
+          cd /tmp/aur
+          git add PKGBUILD .SRCINFO
+          git diff --cached --quiet && { echo "AUR already up to date"; exit 0; }
+          git commit -m "Update to $(source PKGBUILD && echo "$pkgver-$pkgrel")"
+          git push origin HEAD:master

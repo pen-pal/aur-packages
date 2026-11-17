@@ -1,0 +1,5 @@
+src/
+pkg/
+*.tar.*
+caveman-bin/.git
+shellfirm-bin/.git
