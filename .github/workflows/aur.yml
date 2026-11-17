@@ -2,7 +2,8 @@ name: AUR
 
 on:
   schedule:
-    - cron: '17 */6 * * *'
+    # Hourly: GitHub may delay or drop scheduled runs, so a missed slot costs an hour, not six.
+    - cron: '17 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
