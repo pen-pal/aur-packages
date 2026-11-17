@@ -76,8 +76,9 @@ jobs:
         env:
           BUMPED: ${{ steps.check.outputs.bumped }}
         run: |
-          # shellcheck disable=SC2046 # word splitting intended
-          pacman -S --noconfirm --needed $(source PKGBUILD && echo "${depends[@]}" "${makedepends[@]}")
+          deps=$(source PKGBUILD && echo "${depends[@]}" "${makedepends[@]}")
+          # shellcheck disable=SC2086 # word splitting intended; pacman errors on an empty list
+          [[ -z $deps ]] || pacman -S --noconfirm --needed $deps
           chown -R builder .
           # Refresh checksums only for a new upstream version. Otherwise makepkg verifies
           # downloads against the committed sums, so a replaced upstream asset fails here.
