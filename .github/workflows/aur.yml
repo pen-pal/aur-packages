@@ -34,6 +34,7 @@ jobs:
           - { pkg: shellfirm-bin, upstream: kaplanelad/shellfirm, check: shellfirm --version }
           - { pkg: caveman-bin, upstream: JuliusBrussee/caveman, check: caveman --version }
           - { pkg: ctfkit, upstream: compliancetf/ctfkit, check: ctfkit --version }
+          - { pkg: artex-bin, upstream: BaaRai/ARTEX, check: artex -h }
     env:
       AUR_PKG: ${{ matrix.pkg }}
       UPSTREAM: ${{ matrix.upstream }}
@@ -150,8 +151,10 @@ jobs:
             # AUR first: if this fails, nothing lands here and the next run retries.
             aur=$RUNNER_TEMP/aur-$pkg
             GIT_SSH_COMMAND=$aur_ssh git clone -q "ssh://aur@aur.archlinux.org/$pkg.git" "$aur"
+            # Tracked package files (service units, scripts...), then the built PKGBUILD/.SRCINFO.
+            git ls-files -z -- "$pkg" | xargs -0 cp -t "$aur/"
             cp "$dir/PKGBUILD" "$dir/.SRCINFO" "$aur/"
-            git -C "$aur" add PKGBUILD .SRCINFO
+            git -C "$aur" add -A
             if git -C "$aur" diff --cached --quiet; then
               echo "AUR already up to date"
             else
