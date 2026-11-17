@@ -23,10 +23,14 @@ build() {
     cd "$pkgname-$pkgver"
     export GOPATH="$srcdir/gopath"
     export CGO_ENABLED=1 # upstream's release binary is CGO_ENABLED=0, which compiles out NVML
-    export CGO_CPPFLAGS="$CPPFLAGS" CGO_CFLAGS="$CFLAGS" CGO_CXXFLAGS="$CXXFLAGS" CGO_LDFLAGS="$LDFLAGS"
+    # go-nvml needs lazy binding: it references NVML symbols that older drivers lack, and
+    # makepkg's -z now fails at startup on the first one. Same as Arch's nvidia-container-toolkit.
+    local _ldflags="$LDFLAGS -Wl,-z,lazy"
+    export CGO_CPPFLAGS="$CPPFLAGS" CGO_CFLAGS="$CFLAGS" CGO_CXXFLAGS="$CXXFLAGS" CGO_LDFLAGS="$_ldflags"
     # -buildvcs=false: srcdir sits inside the AUR/packaging git checkout, not upstream's repo
     export GOFLAGS='-buildmode=pie -trimpath -buildvcs=false -mod=readonly -modcacherw'
-    go build -ldflags "-linkmode=external -X main.version=$pkgver" -o gpu-mcp-server ./cmd/gpu-mcp-server
+    go build -ldflags "-linkmode=external -extldflags \"$_ldflags\" -X main.version=$pkgver" \
+        -o gpu-mcp-server ./cmd/gpu-mcp-server
 }
 
 package() {
