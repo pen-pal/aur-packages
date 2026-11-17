@@ -30,6 +30,7 @@ jobs:
           # pkg = folder name = AUR package name; upstream = GitHub repo with releases; check = smoke test
           - { pkg: shellfirm-bin, upstream: kaplanelad/shellfirm, check: shellfirm --version }
           - { pkg: caveman-bin, upstream: JuliusBrussee/caveman, check: caveman --version }
+          - { pkg: ctfkit, upstream: compliancetf/ctfkit, check: ctfkit --version }
     env:
       AUR_PKG: ${{ matrix.pkg }}
       UPSTREAM: ${{ matrix.upstream }}
@@ -69,7 +70,7 @@ jobs:
         working-directory: ${{ matrix.pkg }}
         run: |
           # shellcheck disable=SC2046 # word splitting intended
-          pacman -S --noconfirm --needed $(source PKGBUILD && echo "${depends[@]}")
+          pacman -S --noconfirm --needed $(source PKGBUILD && echo "${depends[@]}" "${makedepends[@]}")
           chown -R builder .
           su builder -c 'updpkgsums && makepkg -f --noconfirm && makepkg --printsrcinfo > .SRCINFO'
           pacman -U --noconfirm "$AUR_PKG"-*.pkg.tar.zst
