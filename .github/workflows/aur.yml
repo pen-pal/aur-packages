@@ -47,6 +47,9 @@ jobs:
           - { pkg: zero-breach-toolkit-bin, upstream: interplains/Zero-Breach-Toolkit, check: zero-breach-toolkit --version }
           - { pkg: prime-agent-bin, upstream: PrimeIntellect-ai/prime-agent, check: prime-agent --version }
           - { pkg: tfk8s-bin, upstream: jrhouston/tfk8s, check: tfk8s --version }
+          - pkg: kicad-routing-tools
+            upstream: drandyhaas/KiCadRoutingTools
+            check: env PYTHONPATH=/usr/share/kicad/scripting/plugins/KiCadRoutingTools/rust_router python -c "import grid_router"
     env:
       AUR_PKG: ${{ matrix.pkg }}
       UPSTREAM: ${{ matrix.upstream }}
