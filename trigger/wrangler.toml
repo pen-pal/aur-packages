@@ -1,0 +1,9 @@
+name = "aur-trigger"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+REPO = "pen-pal/aur-packages"
+
+[triggers]
+crons = ["17 * * * *"]
