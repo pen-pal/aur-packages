@@ -56,6 +56,13 @@ jobs:
           - pkg: obsidian-anysocket-sync-server
             upstream: lynxaegon/obsidian-anysocket-sync-server
             check: cd /usr/lib/obsidian-anysocket-sync-server && node -e "for (const m of process.argv.slice(1)) require(m)" anysocket node-cron node-diff3 ./libs/DB
+          - { pkg: paccor-bin, upstream: nsacyber/paccor, check: paccor --help }
+          - { pkg: func-e, upstream: tetratelabs/func-e, check: func-e --version }
+          - { pkg: agentcore-cli-bin, upstream: aws/agentcore-cli, check: agentcore --version }
+          # Loads taskcat's config schema: catches dependency breakage that --version would not.
+          - pkg: taskcat
+            upstream: aws-ia/taskcat
+            check: /usr/lib/taskcat/bin/python -c "from taskcat._dataclasses import GeneralConfig; GeneralConfig().to_dict()"
     env:
       AUR_PKG: ${{ matrix.pkg }}
       UPSTREAM: ${{ matrix.upstream }}
@@ -88,11 +95,11 @@ jobs:
             if $polling; then echo "skip=true" >> "$GITHUB_OUTPUT"; fi
             exit 0
           fi
-          # Newest plain [v]X.Y.Z release: skips side tags (caveman's bin-v*, middleware-*-v*) and
-          # release candidates that upstreams publish without the prerelease flag (v1.0.0-rc.3).
+          # Newest plain [v]X.Y.Z (or paccor-style X.YrN) release: skips side tags (caveman's bin-v*,
+          # middleware-*-v*) and release candidates published without the prerelease flag (v1.0.0-rc.3).
           latest=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/$UPSTREAM/releases?per_page=30" |
-            jq -r '[.[] | select(.draft or .prerelease | not) | .tag_name | select(test("^v?[0-9]+(\\.[0-9]+)*$"))] | first')
+            jq -r '[.[] | select(.draft or .prerelease | not) | .tag_name | select(test("^v?[0-9]+(\\.[0-9]+)*(r[0-9]+)?$"))] | first')
           latest=${latest#v}
           [[ $latest =~ ^[0-9][0-9A-Za-z.]*$ ]] || { echo "bad upstream tag: $latest"; exit 1; }
           current=$(source PKGBUILD && echo "$pkgver")
