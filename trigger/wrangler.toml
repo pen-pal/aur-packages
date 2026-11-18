@@ -1,6 +1,8 @@
 name = "aur-trigger"
 main = "worker.js"
 compatibility_date = "2026-11-01"
+# No HTTP handler: the Worker runs only on email and cron, so skip the public workers.dev URL.
+workers_dev = false
 
 [vars]
 REPO = "pen-pal/aur-packages"
