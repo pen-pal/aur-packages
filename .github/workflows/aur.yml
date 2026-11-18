@@ -52,6 +52,10 @@ jobs:
             check: env PYTHONPATH=/usr/share/kicad/scripting/plugins/KiCadRoutingTools/rust_router python -c "import grid_router"
           - { pkg: github-dorks-git, upstream: techgaun/github-dorks, check: github-dorks --list-categories }
           - { pkg: kubectl-ate, upstream: agent-substrate/substrate, check: kubectl-ate --version }
+          # The server itself refuses to start with the example password, so load its modules.
+          - pkg: obsidian-anysocket-sync-server
+            upstream: lynxaegon/obsidian-anysocket-sync-server
+            check: cd /usr/lib/obsidian-anysocket-sync-server && node -e "for (const m of process.argv.slice(1)) require(m)" anysocket node-cron node-diff3 ./libs/DB
     env:
       AUR_PKG: ${{ matrix.pkg }}
       UPSTREAM: ${{ matrix.upstream }}
@@ -84,11 +88,11 @@ jobs:
             if $polling; then echo "skip=true" >> "$GITHUB_OUTPUT"; fi
             exit 0
           fi
-          # Newest plain vX.Y.Z release: skips side tags (caveman's bin-v*, middleware-*-v*) and
+          # Newest plain [v]X.Y.Z release: skips side tags (caveman's bin-v*, middleware-*-v*) and
           # release candidates that upstreams publish without the prerelease flag (v1.0.0-rc.3).
           latest=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/$UPSTREAM/releases?per_page=30" |
-            jq -r '[.[] | select(.draft or .prerelease | not) | .tag_name | select(test("^v[0-9]+(\\.[0-9]+)*$"))] | first')
+            jq -r '[.[] | select(.draft or .prerelease | not) | .tag_name | select(test("^v?[0-9]+(\\.[0-9]+)*$"))] | first')
           latest=${latest#v}
           [[ $latest =~ ^[0-9][0-9A-Za-z.]*$ ]] || { echo "bad upstream tag: $latest"; exit 1; }
           current=$(source PKGBUILD && echo "$pkgver")
