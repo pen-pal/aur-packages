@@ -50,6 +50,7 @@ jobs:
           - pkg: kicad-routing-tools
             upstream: drandyhaas/KiCadRoutingTools
             check: env PYTHONPATH=/usr/share/kicad/scripting/plugins/KiCadRoutingTools/rust_router python -c "import grid_router"
+          - { pkg: github-dorks-git, upstream: techgaun/github-dorks, check: github-dorks --list-categories }
     env:
       AUR_PKG: ${{ matrix.pkg }}
       UPSTREAM: ${{ matrix.upstream }}
@@ -71,6 +72,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FORCE: ${{ inputs.force }}
         run: |
+          polling=false
+          if [[ $GITHUB_EVENT_NAME == schedule ||
+                ( $GITHUB_EVENT_NAME == workflow_dispatch && $FORCE != true ) ]]; then
+            polling=true
+          fi
+          # VCS package: makepkg's pkgver() follows upstream's branch, so there are no
+          # releases to poll; build it on pushes, pull requests and forced runs only.
+          if [[ $AUR_PKG == *-git ]]; then
+            if $polling; then echo "skip=true" >> "$GITHUB_OUTPUT"; fi
+            exit 0
+          fi
           # Newest stable vX.Y.Z release; skips side tags (caveman also ships bin-v*, middleware-*-v*).
           latest=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/$UPSTREAM/releases?per_page=30" |
@@ -82,8 +94,7 @@ jobs:
           if (( $(vercmp "$latest" "$current") > 0 )); then
             sed -i "s/^pkgver=.*/pkgver=$latest/; s/^pkgrel=.*/pkgrel=1/" PKGBUILD
             echo "bumped=true" >> "$GITHUB_OUTPUT"
-          elif [[ $GITHUB_EVENT_NAME == schedule ||
-                  ( $GITHUB_EVENT_NAME == workflow_dispatch && $FORCE != true ) ]]; then
+          elif $polling; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
