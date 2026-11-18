@@ -4,7 +4,14 @@ on:
   schedule:
     # Hourly: GitHub may delay or drop scheduled runs, so a missed slot costs an hour, not six.
     - cron: '17 * * * *'
+  # Manual or API runs only check for new releases, like the schedule, unless forced.
+  # GitHub drops many scheduled runs, so an external trigger can call this hourly.
   workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild and republish every package even without a new upstream release
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths: ['*/PKGBUILD', '.github/workflows/aur.yml']
@@ -38,6 +45,8 @@ jobs:
           - { pkg: artex-bin, upstream: BaaRai/ARTEX, check: artex -h }
           - { pkg: gpu-mcp-server, upstream: pmady/gpu-mcp-server, check: gpu-mcp-server --version }
           - { pkg: zero-breach-toolkit-bin, upstream: interplains/Zero-Breach-Toolkit, check: zero-breach-toolkit --version }
+          - { pkg: prime-agent-bin, upstream: PrimeIntellect-ai/prime-agent, check: prime-agent --version }
+          - { pkg: tfk8s-bin, upstream: jrhouston/tfk8s, check: tfk8s --version }
     env:
       AUR_PKG: ${{ matrix.pkg }}
       UPSTREAM: ${{ matrix.upstream }}
@@ -57,6 +66,7 @@ jobs:
         working-directory: ${{ matrix.pkg }}
         env:
           GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
         run: |
           # Newest stable vX.Y.Z release; skips side tags (caveman also ships bin-v*, middleware-*-v*).
           latest=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
@@ -69,7 +79,8 @@ jobs:
           if (( $(vercmp "$latest" "$current") > 0 )); then
             sed -i "s/^pkgver=.*/pkgver=$latest/; s/^pkgrel=.*/pkgrel=1/" PKGBUILD
             echo "bumped=true" >> "$GITHUB_OUTPUT"
-          elif [[ $GITHUB_EVENT_NAME == schedule ]]; then
+          elif [[ $GITHUB_EVENT_NAME == schedule ||
+                  ( $GITHUB_EVENT_NAME == workflow_dispatch && $FORCE != true ) ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
